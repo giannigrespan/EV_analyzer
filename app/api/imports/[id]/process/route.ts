@@ -3,8 +3,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { parseOctopusBillCsv } from "@/lib/parsers/octopus";
 import { parseWallboxCsv } from "@/lib/parsers/wallbox";
+import { parseDrivvoCsv } from "@/lib/parsers/drivvo";
+import { parseAbrpCsv } from "@/lib/parsers/abrp";
+import type { TripRow } from "@/lib/parsers/trip-common";
 import type { ParsedRowError } from "@/lib/parsers/types";
 import { calculateSessionCost } from "@/lib/cost/calculate-session-cost";
+import { getAverageCostPerKwh } from "@/lib/cost/average-charging-cost";
 import type { Database } from "@/lib/supabase/database.types";
 
 async function finalizeImport(
@@ -154,6 +158,52 @@ export async function POST(
       const { error: insertError } = await supabase
         .from("charging_sessions")
         .insert(withCost);
+
+      if (insertError) {
+        errors.push({ row: 0, message: `Errore inserimento: ${insertError.message}` });
+      } else {
+        inserted = withCost.length;
+      }
+    }
+
+    const status = await finalizeImport(supabase, id, rowsTotal, inserted, errors);
+    return NextResponse.json({ status, inserted, errors });
+  }
+
+  if (importRow.source_type === "drivvo_export" || importRow.source_type === "abrp_export") {
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    const { rows, errors, rowsTotal } =
+      importRow.source_type === "drivvo_export"
+        ? parseDrivvoCsv(csvText, user.id, vehicle?.id ?? null)
+        : parseAbrpCsv(csvText, user.id, vehicle?.id ?? null);
+
+    let inserted = 0;
+    if (rows.length > 0) {
+      const avgCostPerKwh = await getAverageCostPerKwh(supabase, user.id);
+
+      const withCost: TripRow[] = rows.map((r) => {
+        const hasExplicitCost = r.cost !== null && r.cost !== undefined;
+        const canEstimate =
+          !hasExplicitCost && r.energy_used_kwh != null && avgCostPerKwh !== null;
+
+        return {
+          ...r,
+          cost: hasExplicitCost
+            ? r.cost
+            : canEstimate
+              ? r.energy_used_kwh! * avgCostPerKwh!
+              : r.cost,
+          source_import_id: id,
+        };
+      });
+
+      const { error: insertError } = await supabase.from("trips").insert(withCost);
 
       if (insertError) {
         errors.push({ row: 0, message: `Errore inserimento: ${insertError.message}` });
