@@ -1,17 +1,30 @@
 import { parseTripCsv, type TripRow } from "./trip-common";
-import type { ParseOutcome } from "./types";
+import {
+  fixMalformedQuotedHeader,
+  stripLeadingCommentLines,
+  type ParseOutcome,
+} from "./types";
 
-// Drivvo's CSV export format is not confirmed yet; these aliases target the
-// most likely headers for an EV logbook entry (date, distance/odometer,
-// energy charged, cost) and should be refined with a real sample export.
+// Matches the real Drivvo "##Refuelling" CSV export (Italian headers,
+// comma-delimited, a leading "##Refuelling" section marker line before the
+// real header row). "Volume" is the kWh charged for an electric fuel-up;
+// "Consumo" (its own km/kWh string) is intentionally not used - efficiency
+// is derived from Volume/Distanza instead, for a consistent unit across
+// all sources.
+//
+// Wallbox is the ground truth for charging energy/cost; Drivvo's own
+// "Costo totale" is a manual, often-approximate entry, so it's deliberately
+// not mapped here - the cost is instead estimated downstream from the
+// user's real average Wallbox cost/kWh. Drivvo is only trusted for the
+// distance travelled between charges.
 const DRIVVO_ALIASES = {
-  date: ["date", "data"],
-  distanceKm: ["distance (km)", "distance", "km", "trip distance (km)"],
-  energyKwh: ["energy (kwh)", "amount", "kwh", "consumption (kwh)"],
-  odometerKm: ["odometer", "odometer (km)", "mileage"],
-  cost: ["total price", "total cost", "cost", "price"],
-  batteryStartPct: [],
-  batteryEndPct: [],
+  date: ["data", "date"],
+  distanceKm: ["distanza", "distance (km)", "distance", "km"],
+  energyKwh: ["volume", "energy (kwh)", "amount", "kwh"],
+  odometerKm: ["contachilometri (km)", "odometer", "odometer (km)", "mileage"],
+  cost: [],
+  batteryStartPct: ["batteria iniziale (%)", "battery start (%)"],
+  batteryEndPct: ["batteria finale (%)", "battery end (%)"],
 } as const;
 
 export function parseDrivvoCsv(
@@ -19,5 +32,6 @@ export function parseDrivvoCsv(
   userId: string,
   vehicleId: string | null
 ): ParseOutcome<TripRow> {
-  return parseTripCsv(csvText, userId, vehicleId, "drivvo", DRIVVO_ALIASES);
+  const cleaned = fixMalformedQuotedHeader(stripLeadingCommentLines(csvText));
+  return parseTripCsv(cleaned, userId, vehicleId, "drivvo", DRIVVO_ALIASES);
 }

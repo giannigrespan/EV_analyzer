@@ -8,42 +8,18 @@ import {
   type ParsedRowError,
 } from "./types";
 
-// myWallbox CSV export column names are not confirmed yet; these aliases
-// cover the most likely variants (a session either has an explicit end time,
-// or a duration to add to the start time) and should be extended once a
-// real sample export is available.
+// Matches the real "sessions_<id>_<from>_to_<to>.csv" export from the
+// Wallbox app (semicolon-delimited, Italian decimal commas, DD/MM/YYYY
+// timestamps). Falls back to a couple of alternate header spellings in
+// case other Wallbox models/exports differ slightly.
 const COLUMN_ALIASES = {
-  start: ["start", "start time", "charging start", "session start", "start date"],
-  end: ["end", "end time", "charging end", "session end", "end date"],
-  duration: ["duration", "charging time", "session duration"],
-  energy: [
-    "energy (kwh)",
-    "energy",
-    "kwh",
-    "charged energy (kwh)",
-    "charged energy",
-  ],
+  start: ["started at", "start", "start time", "charging start"],
+  end: ["ended at", "end", "end time", "charging end"],
+  totalEnergy: ["total energy (kwh)", "energy (kwh)", "kwh"],
+  gridEnergy: ["grid energy (kwh)"],
 } as const;
 
 export type WallboxSessionRow = TablesInsert<"charging_sessions">;
-
-function parseDurationToMs(value: string): number | null {
-  const trimmed = value.trim();
-  if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    return Number(trimmed) * 60_000; // plain number: assume minutes
-  }
-  const parts = trimmed.split(":").map(Number);
-  if (parts.some((p) => Number.isNaN(p))) return null;
-  if (parts.length === 3) {
-    const [h, m, s] = parts;
-    return (h * 3600 + m * 60 + s) * 1000;
-  }
-  if (parts.length === 2) {
-    const [h, m] = parts;
-    return (h * 3600 + m * 60) * 1000;
-  }
-  return null;
-}
 
 export function parseWallboxCsv(
   csvText: string,
@@ -59,42 +35,49 @@ export function parseWallboxCsv(
   const col = {
     start: findColumn(headers, COLUMN_ALIASES.start),
     end: findColumn(headers, COLUMN_ALIASES.end),
-    duration: findColumn(headers, COLUMN_ALIASES.duration),
-    energy: findColumn(headers, COLUMN_ALIASES.energy),
+    totalEnergy: findColumn(headers, COLUMN_ALIASES.totalEnergy),
+    gridEnergy: findColumn(headers, COLUMN_ALIASES.gridEnergy),
   };
 
   const errors: ParsedRowError[] = [];
   const rows: WallboxSessionRow[] = [];
 
-  if (!col.start || !col.energy || (!col.end && !col.duration)) {
+  if (!col.start || !col.end || !col.totalEnergy) {
     errors.push({
       row: 0,
       message: `Colonne non riconosciute nel file. Intestazioni trovate: ${
         headers.join(", ") || "nessuna"
-      }. Attese: inizio ricarica, fine (o durata), energia (kWh).`,
+      }. Attese: inizio ricarica, fine ricarica, energia totale (kWh).`,
     });
     return { rows, errors, rowsTotal: parsed.data.length };
   }
 
   parsed.data.forEach((raw, index) => {
     const rowNumber = index + 2;
-    const startedAt = parseDateTime(raw[col.start!]);
-    const energyKwh = parseNumber(raw[col.energy!]);
+    const endRaw = raw[col.end!]?.trim();
 
-    let endedAt: Date | null = null;
-    if (col.end) {
-      endedAt = parseDateTime(raw[col.end]);
-    } else if (col.duration && startedAt) {
-      const durationMs = parseDurationToMs(raw[col.duration]);
-      if (durationMs !== null) {
-        endedAt = new Date(startedAt.getTime() + durationMs);
-      }
+    // Sessions still in progress ("In corso") have no final energy total yet.
+    if (endRaw && /^in corso$/i.test(endRaw)) {
+      return;
     }
 
-    if (!startedAt || !endedAt || energyKwh === null || energyKwh <= 0) {
+    const startedAt = parseDateTime(raw[col.start!]);
+    const endedAt = parseDateTime(endRaw);
+    const totalEnergyKwh = parseNumber(raw[col.totalEnergy!]);
+    const gridEnergyKwh = col.gridEnergy
+      ? parseNumber(raw[col.gridEnergy])
+      : null;
+
+    // A session with no energy delivered (a brief plug touch, or a session
+    // that never actually charged) isn't worth surfacing as an import error.
+    if (totalEnergyKwh === null || totalEnergyKwh <= 0) {
+      return;
+    }
+
+    if (!startedAt || !endedAt) {
       errors.push({
         row: rowNumber,
-        message: `Riga non valida (inizio, fine/durata o energia mancante/illeggibile): ${JSON.stringify(
+        message: `Riga non valida (data di inizio o fine non leggibile): ${JSON.stringify(
           raw
         )}`,
       });
@@ -114,7 +97,8 @@ export function parseWallboxCsv(
       vehicle_id: vehicleId,
       started_at: startedAt.toISOString(),
       ended_at: endedAt.toISOString(),
-      energy_kwh: energyKwh,
+      energy_kwh: totalEnergyKwh,
+      grid_energy_kwh: gridEnergyKwh ?? undefined,
       location_type: "home",
     });
   });

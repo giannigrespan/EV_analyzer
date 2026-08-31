@@ -21,6 +21,7 @@ export type Database = {
           created_at: string
           ended_at: string
           energy_kwh: number
+          grid_energy_kwh: number | null
           id: string
           location_type: string
           source_import_id: string | null
@@ -34,6 +35,7 @@ export type Database = {
           created_at?: string
           ended_at: string
           energy_kwh: number
+          grid_energy_kwh?: number | null
           id?: string
           location_type?: string
           source_import_id?: string | null
@@ -47,6 +49,7 @@ export type Database = {
           created_at?: string
           ended_at?: string
           energy_kwh?: number
+          grid_energy_kwh?: number | null
           id?: string
           location_type?: string
           source_import_id?: string | null

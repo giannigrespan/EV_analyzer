@@ -25,7 +25,7 @@ export async function ensureDefaultTariff(
       user_id: userId,
       provider: "octopus",
       name: "Octopus Go",
-      currency: "GBP",
+      currency: "EUR",
     })
     .select("id")
     .single();

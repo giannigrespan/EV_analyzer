@@ -20,7 +20,7 @@ create table if not exists public.energy_tariffs (
   user_id uuid not null references auth.users(id) on delete cascade,
   provider text not null default 'octopus',
   name text not null,
-  currency text not null default 'GBP',
+  currency text not null default 'EUR',
   standing_charge_per_day numeric,
   created_at timestamptz not null default now()
 );

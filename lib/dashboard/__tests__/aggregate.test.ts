@@ -14,6 +14,7 @@ function makeSession(overrides: Partial<ChargingSession>): ChargingSession {
     started_at: "2026-07-15T01:00:00Z",
     ended_at: "2026-07-15T03:00:00Z",
     energy_kwh: 10,
+    grid_energy_kwh: null,
     location_type: "home",
     cost: 1,
     cost_breakdown: { off_peak_kwh: 10, off_peak_cost: 1, standard_kwh: 0, standard_cost: 0 },
