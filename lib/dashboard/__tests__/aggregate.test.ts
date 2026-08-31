@@ -108,6 +108,35 @@ describe("reconcileBills", () => {
     expect(reconciled.chargingCost).toBe(25);
     expect(reconciled.costDelta).toBe(60 - 25);
   });
+
+  it("derives the real €/kWh from the bill's energy cost net of the standing charge", () => {
+    const bills = [
+      makeBill({ total_cost: 60, total_kwh: 200, standing_charge_total: 10 }),
+    ];
+
+    const [reconciled] = reconcileBills(bills, []);
+
+    // (60 - 10) / 200
+    expect(reconciled.billRatePerKwh).toBeCloseTo(0.25, 5);
+  });
+
+  it("falls back to the full bill total when there is no standing charge", () => {
+    const bills = [
+      makeBill({ total_cost: 60, total_kwh: 200, standing_charge_total: null }),
+    ];
+
+    const [reconciled] = reconcileBills(bills, []);
+
+    expect(reconciled.billRatePerKwh).toBeCloseTo(0.3, 5);
+  });
+
+  it("returns null billRatePerKwh when the bill has no kWh to divide by", () => {
+    const bills = [makeBill({ total_kwh: 0 })];
+
+    const [reconciled] = reconcileBills(bills, []);
+
+    expect(reconciled.billRatePerKwh).toBeNull();
+  });
 });
 
 describe("tripEfficiencySummary", () => {

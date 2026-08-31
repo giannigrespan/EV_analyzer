@@ -48,6 +48,7 @@ export type BillReconciliation = {
   periodEnd: string;
   billTotalCost: number;
   billTotalKwh: number;
+  billRatePerKwh: number | null;
   chargingCost: number;
   chargingKwh: number;
   costDelta: number;
@@ -71,12 +72,20 @@ export function reconcileBills(
     const chargingCost = inPeriod.reduce((sum, s) => sum + (s.cost ?? 0), 0);
     const chargingKwh = inPeriod.reduce((sum, s) => sum + s.energy_kwh, 0);
 
+    // Energy portion of the bill (total minus the standing charge, which
+    // isn't consumption-based) divided by billed kWh - the real, all-in
+    // €/kWh actually paid, as opposed to the manually configured tariff
+    // rate used to estimate charging_sessions.cost.
+    const energyCost = bill.total_cost - (bill.standing_charge_total ?? 0);
+    const billRatePerKwh = bill.total_kwh > 0 ? energyCost / bill.total_kwh : null;
+
     return {
       billId: bill.id,
       periodStart: bill.billing_period_start,
       periodEnd: bill.billing_period_end,
       billTotalCost: bill.total_cost,
       billTotalKwh: bill.total_kwh,
+      billRatePerKwh,
       chargingCost,
       chargingKwh,
       costDelta: bill.total_cost - chargingCost,
