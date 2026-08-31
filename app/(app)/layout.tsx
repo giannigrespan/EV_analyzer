@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureDefaultVehicle } from "@/lib/vehicles/ensure-default-vehicle";
+import { ensureDefaultTariff } from "@/lib/tariff/ensure-default-tariff";
 import { MainNav } from "@/components/main-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -19,6 +20,7 @@ export default async function AppLayout({
   }
 
   await ensureDefaultVehicle(supabase, user.id);
+  await ensureDefaultTariff(supabase, user.id);
 
   return (
     <div className="min-h-screen bg-muted/20">
