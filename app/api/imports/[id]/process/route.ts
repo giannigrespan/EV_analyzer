@@ -1,7 +1,36 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { parseOctopusBillCsv } from "@/lib/parsers/octopus";
+import { parseWallboxCsv } from "@/lib/parsers/wallbox";
 import type { ParsedRowError } from "@/lib/parsers/types";
+import { calculateSessionCost } from "@/lib/cost/calculate-session-cost";
+import type { Database } from "@/lib/supabase/database.types";
+
+async function finalizeImport(
+  supabase: SupabaseClient<Database>,
+  importId: string,
+  rowsTotal: number,
+  inserted: number,
+  errors: ParsedRowError[]
+) {
+  const status =
+    errors.length === 0 ? "success" : inserted > 0 ? "partial_error" : "error";
+
+  await supabase
+    .from("raw_imports")
+    .update({
+      status,
+      rows_total: rowsTotal,
+      rows_imported: inserted,
+      rows_failed: rowsTotal - inserted,
+      error_summary: errors.length > 0 ? errors : null,
+      processed_at: new Date().toISOString(),
+    })
+    .eq("id", importId);
+
+  return status;
+}
 
 export async function POST(
   _request: Request,
@@ -37,16 +66,9 @@ export async function POST(
     .download(importRow.storage_path);
 
   if (downloadError || !fileData) {
-    await supabase
-      .from("raw_imports")
-      .update({
-        status: "error",
-        error_summary: [
-          { row: 0, message: "Impossibile scaricare il file caricato." },
-        ],
-        processed_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    await finalizeImport(supabase, id, 0, 0, [
+      { row: 0, message: "Impossibile scaricare il file caricato." },
+    ]);
     return NextResponse.json({ error: "Download failed" }, { status: 500 });
   }
 
@@ -80,21 +102,67 @@ export async function POST(
       }
     }
 
-    const status =
-      errors.length === 0 ? "success" : inserted > 0 ? "partial_error" : "error";
+    const status = await finalizeImport(supabase, id, rowsTotal, inserted, errors);
+    return NextResponse.json({ status, inserted, errors });
+  }
 
-    await supabase
-      .from("raw_imports")
-      .update({
-        status,
-        rows_total: rowsTotal,
-        rows_imported: inserted,
-        rows_failed: rowsTotal - inserted,
-        error_summary: errors.length > 0 ? errors : null,
-        processed_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+  if (importRow.source_type === "wallbox_export") {
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
 
+    const { rows, errors, rowsTotal } = parseWallboxCsv(
+      csvText,
+      user.id,
+      vehicle?.id ?? null
+    );
+
+    let inserted = 0;
+    if (rows.length > 0) {
+      const { data: tariff } = await supabase
+        .from("energy_tariffs")
+        .select("id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      const { data: periods } = tariff
+        ? await supabase
+            .from("tariff_rate_periods")
+            .select("*")
+            .eq("tariff_id", tariff.id)
+        : { data: [] };
+
+      const withCost = rows.map((r) => {
+        const { cost, breakdown } = calculateSessionCost(
+          periods ?? [],
+          new Date(r.started_at),
+          new Date(r.ended_at),
+          r.energy_kwh
+        );
+        return {
+          ...r,
+          cost,
+          cost_breakdown: breakdown,
+          source_import_id: id,
+        };
+      });
+
+      const { error: insertError } = await supabase
+        .from("charging_sessions")
+        .insert(withCost);
+
+      if (insertError) {
+        errors.push({ row: 0, message: `Errore inserimento: ${insertError.message}` });
+      } else {
+        inserted = withCost.length;
+      }
+    }
+
+    const status = await finalizeImport(supabase, id, rowsTotal, inserted, errors);
     return NextResponse.json({ status, inserted, errors });
   }
 
@@ -105,14 +173,9 @@ export async function POST(
     },
   ];
 
-  await supabase
-    .from("raw_imports")
-    .update({
-      status: "error",
-      error_summary: notYetSupported,
-      processed_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-
-  return NextResponse.json({ status: "error", errors: notYetSupported }, { status: 400 });
+  await finalizeImport(supabase, id, 0, 0, notYetSupported);
+  return NextResponse.json(
+    { status: "error", errors: notYetSupported },
+    { status: 400 }
+  );
 }
