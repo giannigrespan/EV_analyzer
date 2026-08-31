@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { parseOctopusBillCsv } from "@/lib/parsers/octopus";
+import { parseOctopusBillPdf } from "@/lib/parsers/octopus";
 import { parseWallboxCsv } from "@/lib/parsers/wallbox";
 import { parseDrivvoCsv } from "@/lib/parsers/drivvo";
 import { parseAbrpCsv } from "@/lib/parsers/abrp";
@@ -76,8 +76,6 @@ export async function POST(
     return NextResponse.json({ error: "Download failed" }, { status: 500 });
   }
 
-  const csvText = await fileData.text();
-
   if (importRow.source_type === "octopus_bill") {
     const { data: tariff } = await supabase
       .from("energy_tariffs")
@@ -86,8 +84,9 @@ export async function POST(
       .limit(1)
       .maybeSingle();
 
-    const { rows, errors, rowsTotal } = parseOctopusBillCsv(
-      csvText,
+    const pdfBytes = await fileData.arrayBuffer();
+    const { rows, errors, rowsTotal } = await parseOctopusBillPdf(
+      pdfBytes,
       user.id,
       tariff?.id ?? null
     );
@@ -109,6 +108,8 @@ export async function POST(
     const status = await finalizeImport(supabase, id, rowsTotal, inserted, errors);
     return NextResponse.json({ status, inserted, errors });
   }
+
+  const csvText = await fileData.text();
 
   if (importRow.source_type === "wallbox_export") {
     const { data: vehicle } = await supabase

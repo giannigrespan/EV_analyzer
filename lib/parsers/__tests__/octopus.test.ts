@@ -1,14 +1,22 @@
-import { describe, expect, it } from "vitest";
-import { parseOctopusBillCsv } from "../octopus";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { extractText, getDocumentProxy } from "unpdf";
+import { parseOctopusBillPdf, parseOctopusBillText } from "../octopus";
 
-describe("parseOctopusBillCsv", () => {
+vi.mock("unpdf", () => ({
+  getDocumentProxy: vi.fn(),
+  extractText: vi.fn(),
+}));
+
+describe("parseOctopusBillText", () => {
   it("parses a well-formed monthly bill summary", () => {
-    const csv = [
-      "Period start,Period end,Total kWh,Total cost",
-      "2026-07-01,2026-07-31,210.5,63.15",
+    const text = [
+      "Bolletta luce",
+      "Periodo di fatturazione: dal 01/07/2026 al 31/07/2026",
+      "Consumo totale: 210,5 kWh",
+      "Totale da pagare: € 63,15",
     ].join("\n");
 
-    const { rows, errors } = parseOctopusBillCsv(csv, "user-1", "tariff-1");
+    const { rows, errors } = parseOctopusBillText(text, "user-1", "tariff-1");
 
     expect(errors).toHaveLength(0);
     expect(rows).toHaveLength(1);
@@ -22,25 +30,66 @@ describe("parseOctopusBillCsv", () => {
     });
   });
 
-  it("reports an error and no rows when columns are not recognized", () => {
-    const csv = ["Foo,Bar", "1,2"].join("\n");
-    const { rows, errors } = parseOctopusBillCsv(csv, "user-1", null);
+  it("extracts an optional standing charge when present", () => {
+    const text = [
+      "Dal 01/07/2026 al 31/07/2026",
+      "Consumo totale: 210,5 kWh",
+      "Quota fissa: € 10,00",
+      "Totale da pagare: € 63,15",
+    ].join("\n");
+
+    const { rows } = parseOctopusBillText(text, "user-1", null);
+
+    expect(rows[0].standing_charge_total).toBe(10);
+  });
+
+  it("reports an error when the expected fields are not found in the text", () => {
+    const { rows, errors } = parseOctopusBillText(
+      "Documento non riconosciuto",
+      "user-1",
+      null
+    );
 
     expect(rows).toHaveLength(0);
     expect(errors.length).toBeGreaterThan(0);
   });
+});
 
-  it("skips an individual malformed row but keeps the valid ones", () => {
-    const csv = [
-      "Period start,Period end,Total kWh,Total cost",
-      "2026-07-01,2026-07-31,210.5,63.15",
-      "not-a-date,2026-08-31,190,58",
-    ].join("\n");
+describe("parseOctopusBillPdf", () => {
+  beforeEach(() => {
+    vi.mocked(getDocumentProxy).mockReset();
+    vi.mocked(extractText).mockReset();
+  });
 
-    const { rows, errors, rowsTotal } = parseOctopusBillCsv(csv, "user-1", null);
+  it("extracts text from the PDF bytes and delegates to parseOctopusBillText", async () => {
+    vi.mocked(getDocumentProxy).mockResolvedValue({} as never);
+    vi.mocked(extractText).mockResolvedValue({
+      text: "Dal 01/07/2026 al 31/07/2026 Consumo totale: 210,5 kWh Totale da pagare: € 63,15",
+      totalPages: 1,
+    } as never);
 
-    expect(rowsTotal).toBe(2);
+    const { rows, errors } = await parseOctopusBillPdf(
+      new Uint8Array([1, 2, 3]),
+      "user-1",
+      "tariff-1"
+    );
+
+    expect(errors).toHaveLength(0);
     expect(rows).toHaveLength(1);
-    expect(errors).toHaveLength(1);
+    expect(rows[0].total_kwh).toBe(210.5);
+    expect(rows[0].total_cost).toBe(63.15);
+  });
+
+  it("reports an error when the PDF cannot be read", async () => {
+    vi.mocked(getDocumentProxy).mockRejectedValue(new Error("invalid pdf"));
+
+    const { rows, errors } = await parseOctopusBillPdf(
+      new Uint8Array([1, 2, 3]),
+      "user-1",
+      null
+    );
+
+    expect(rows).toHaveLength(0);
+    expect(errors[0].message).toContain("invalid pdf");
   });
 });

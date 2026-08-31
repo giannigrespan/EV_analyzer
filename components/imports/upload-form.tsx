@@ -22,6 +22,8 @@ const SOURCE_OPTIONS = [
   { value: "abrp_export", label: "Export ABRP" },
 ];
 
+const isPdfSource = (sourceType: string) => sourceType === "octopus_bill";
+
 export function ImportUploadForm() {
   const router = useRouter();
   const [sourceType, setSourceType] = useState("octopus_bill");
@@ -86,7 +88,10 @@ export function ImportUploadForm() {
         <Label>Tipo di dato</Label>
         <Select
           value={sourceType}
-          onValueChange={(value) => setSourceType(value ?? "octopus_bill")}
+          onValueChange={(value) => {
+            setSourceType(value ?? "octopus_bill");
+            setFile(null);
+          }}
         >
           <SelectTrigger className="w-64">
             <SelectValue />
@@ -101,10 +106,11 @@ export function ImportUploadForm() {
         </Select>
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>File CSV</Label>
+        <Label>{isPdfSource(sourceType) ? "File PDF" : "File CSV"}</Label>
         <Input
+          key={sourceType}
           type="file"
-          accept=".csv"
+          accept={isPdfSource(sourceType) ? ".pdf" : ".csv"}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
       </div>
