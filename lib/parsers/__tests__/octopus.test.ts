@@ -36,6 +36,7 @@ const REAL_BILL_EXCERPT = [
   "Credito rimanente 0,00 €",
   "QUOTA FISSA (comp. commercializzazione): 8,00 €",
   "Trasporto quota fissa 1 1,920000 €/mese 1,92 €",
+  "Altre partite - Octopus Go - Spesa per la materia energia 78,75 €",
 ].join("\n");
 
 describe("parseOctopusBillText", () => {
@@ -62,6 +63,22 @@ describe("parseOctopusBillText", () => {
     const { rows } = parseOctopusBillText(REAL_BILL_EXCERPT, "user-1", null);
 
     expect(rows[0].standing_charge_total).toBe(9.92);
+  });
+
+  it("extracts the Octopus Go energy commodity cost from the 'Altre partite' line", () => {
+    const { rows } = parseOctopusBillText(REAL_BILL_EXCERPT, "user-1", null);
+
+    expect(rows[0].energy_commodity_cost).toBe(78.75);
+  });
+
+  it("leaves energy_commodity_cost undefined when the 'Altre partite' line is absent", () => {
+    const textWithoutIt = REAL_BILL_EXCERPT.split("\n")
+      .filter((line) => !line.includes("Altre partite"))
+      .join("\n");
+
+    const { rows } = parseOctopusBillText(textWithoutIt, "user-1", null);
+
+    expect(rows[0].energy_commodity_cost).toBeUndefined();
   });
 
   it("reports an error when the expected fields are not found in the text", () => {

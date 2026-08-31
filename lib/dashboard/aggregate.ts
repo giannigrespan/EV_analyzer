@@ -52,6 +52,7 @@ export type BillReconciliation = {
   chargingCost: number;
   chargingKwh: number;
   costDelta: number;
+  evRatePerKwh: number | null;
 };
 
 /**
@@ -79,6 +80,16 @@ export function reconcileBills(
     const energyCost = bill.total_cost - (bill.standing_charge_total ?? 0);
     const billRatePerKwh = bill.total_kwh > 0 ? energyCost / bill.total_kwh : null;
 
+    // Octopus Go's own "materia energia" spend (the bill's "Altre partite"
+    // line) divided by the kWh actually charged in the same period - for a
+    // mostly-overnight charger this is a much closer estimate of the real
+    // EV charging rate than billRatePerKwh, which is diluted by the rest of
+    // the home's daytime consumption.
+    const evRatePerKwh =
+      bill.energy_commodity_cost != null && chargingKwh > 0
+        ? bill.energy_commodity_cost / chargingKwh
+        : null;
+
     return {
       billId: bill.id,
       periodStart: bill.billing_period_start,
@@ -89,6 +100,7 @@ export function reconcileBills(
       chargingCost,
       chargingKwh,
       costDelta: bill.total_cost - chargingCost,
+      evRatePerKwh,
     };
   });
 }

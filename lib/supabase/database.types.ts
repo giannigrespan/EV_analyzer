@@ -79,6 +79,7 @@ export type Database = {
           billing_period_end: string
           billing_period_start: string
           created_at: string
+          energy_commodity_cost: number | null
           id: string
           source_import_id: string | null
           standing_charge_total: number | null
@@ -91,6 +92,7 @@ export type Database = {
           billing_period_end: string
           billing_period_start: string
           created_at?: string
+          energy_commodity_cost?: number | null
           id?: string
           source_import_id?: string | null
           standing_charge_total?: number | null
@@ -103,6 +105,7 @@ export type Database = {
           billing_period_end?: string
           billing_period_start?: string
           created_at?: string
+          energy_commodity_cost?: number | null
           id?: string
           source_import_id?: string | null
           standing_charge_total?: number | null

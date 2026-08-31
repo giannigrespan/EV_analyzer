@@ -37,6 +37,15 @@ const STANDING_CHARGE_PATTERNS = [
   /costo\s+fisso[:\s]*€?\s*([\d.,]+)\s*€?/i,
 ];
 
+// The "Altre partite" section breaks out Octopus Go's own energy commodity
+// spend ("Spesa per la materia energia") from network charges, system costs,
+// and taxes - the only cost line directly comparable to a €/kWh charging
+// rate, so it's extracted separately from the bill's grand total.
+const ENERGY_COMMODITY_COST_PATTERNS = [
+  /altre\s+partite\s*-\s*octopus\s+go\s*-\s*spesa\s+per\s+la\s+materia\s+energia[\s\S]{0,20}?([\d]+(?:[.,]\d+)?)\s*€/i,
+  /spesa\s+per\s+la\s+materia\s+energia[\s\S]{0,20}?([\d]+(?:[.,]\d+)?)\s*€/i,
+];
+
 function matchFirst(text: string, patterns: RegExp[]): RegExpMatchArray | null {
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -75,12 +84,16 @@ export function parseOctopusBillText(
   const kwhMatch = matchFirst(normalized, TOTAL_KWH_PATTERNS);
   const costMatch = matchFirst(normalized, TOTAL_COST_PATTERNS);
   const standingMatch = matchFirst(normalized, STANDING_CHARGE_PATTERNS);
+  const energyCommodityMatch = matchFirst(normalized, ENERGY_COMMODITY_COST_PATTERNS);
 
   const periodStart = periodMatch ? parseItalianDate(periodMatch[1]) : null;
   const periodEnd = periodMatch ? parseItalianDate(periodMatch[2]) : null;
   const totalKwh = kwhMatch ? parseItalianNumber(kwhMatch[1]) : null;
   const totalCost = costMatch ? parseItalianNumber(costMatch[1]) : null;
   const standingCharge = standingMatch ? parseItalianNumber(standingMatch[1]) : null;
+  const energyCommodityCost = energyCommodityMatch
+    ? parseItalianNumber(energyCommodityMatch[1])
+    : null;
 
   if (!periodStart || !periodEnd || totalKwh === null || totalCost === null) {
     errors.push({
@@ -99,6 +112,7 @@ export function parseOctopusBillText(
     total_kwh: totalKwh,
     total_cost: totalCost,
     standing_charge_total: standingCharge ?? undefined,
+    energy_commodity_cost: energyCommodityCost ?? undefined,
   };
 
   return { rows: [row], errors, rowsTotal: 1 };

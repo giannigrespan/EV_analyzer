@@ -176,6 +176,7 @@ export default async function DashboardPage() {
                 <TableHead>Periodo</TableHead>
                 <TableHead>Bolletta</TableHead>
                 <TableHead>€/kWh bolletta</TableHead>
+                <TableHead>€/kWh ricarica (materia energia)</TableHead>
                 <TableHead>Ricariche calcolate</TableHead>
                 <TableHead>Differenza</TableHead>
               </TableRow>
@@ -195,6 +196,11 @@ export default async function DashboardPage() {
                       : "—"}
                   </TableCell>
                   <TableCell>
+                    {r.evRatePerKwh != null
+                      ? `${r.evRatePerKwh.toFixed(3)} ${currency}/kWh`
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
                     {r.chargingCost.toFixed(2)} {currency}
                   </TableCell>
                   <TableCell>
@@ -208,7 +214,7 @@ export default async function DashboardPage() {
               {reconciliation.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center text-muted-foreground"
                   >
                     Nessuna bolletta ancora caricata.
