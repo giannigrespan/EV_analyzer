@@ -4,31 +4,37 @@ import type { ParseOutcome, ParsedRowError } from "./types";
 
 export type OctopusBillRow = TablesInsert<"electricity_bills">;
 
-// The exact layout of Octopus Energy Italy's bill PDF is not confirmed yet;
-// these patterns cover the most likely Italian phrasing for a monthly bill
-// (billing period + total kWh + total cost) and should be extended once a
-// real sample file is available.
+// Patterns matched against a real Octopus Energy Italia "Bolletta luce" PDF
+// (e.g. "PERIODO DI RIFERIMENTO: dal 01/07/2026 al 31/07/2026",
+// "CONSUMO FATTURATO: 719 kWh", "TOTALE DA PAGARE 193,56 €"). Kept as an
+// ordered list of alternatives so minor wording differences across bills
+// (e.g. "periodo di fatturazione") still match.
 const PERIOD_PATTERNS = [
+  /periodo\s+di\s+riferimento[:\s]*dal\s+(\d{2}\/\d{2}\/\d{4})\s+al\s+(\d{2}\/\d{2}\/\d{4})/i,
   /periodo\s+di\s+fatturazione[:\s]*dal\s+(\d{2}\/\d{2}\/\d{4})\s+al\s+(\d{2}\/\d{2}\/\d{4})/i,
   /dal\s+(\d{2}\/\d{2}\/\d{4})\s+al\s+(\d{2}\/\d{2}\/\d{4})/i,
   /periodo[:\s]*(\d{2}\/\d{2}\/\d{4})\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})/i,
 ];
 
 const TOTAL_KWH_PATTERNS = [
+  /consumo\s+fatturato[:\s]*([\d.,]+)\s*kwh/i,
   /consumo\s+totale[:\s]*([\d.,]+)\s*kwh/i,
   /totale\s+consumo[:\s]*([\d.,]+)\s*kwh/i,
   /consumo[:\s]*([\d.,]+)\s*kwh/i,
 ];
 
 const TOTAL_COST_PATTERNS = [
-  /totale\s+da\s+pagare[:\s]*€?\s*([\d.,]+)/i,
-  /importo\s+totale[:\s]*€?\s*([\d.,]+)/i,
-  /totale\s+bolletta[:\s]*€?\s*([\d.,]+)/i,
+  /totale\s+da\s+pagare[:\s]*€?\s*([\d.,]+)\s*€?/i,
+  /importo\s+totale[:\s]*€?\s*([\d.,]+)\s*€?/i,
+  /totale\s+bolletta[:\s]*€?\s*([\d.,]+)\s*€?/i,
 ];
 
+// "Quota fissa" is followed by both a per-month unit price ("9,92 €/mese")
+// and the line total ("9,92 €"); only the total (an amount not immediately
+// followed by "/...") is the standing charge we want.
 const STANDING_CHARGE_PATTERNS = [
-  /quota\s+fissa[:\s]*€?\s*([\d.,]+)/i,
-  /costo\s+fisso[:\s]*€?\s*([\d.,]+)/i,
+  /quota\s+fissa[\s\S]{0,80}?([\d]+(?:[.,]\d+)?)\s*€(?!\s*\/)/i,
+  /costo\s+fisso[:\s]*€?\s*([\d.,]+)\s*€?/i,
 ];
 
 function matchFirst(text: string, patterns: RegExp[]): RegExpMatchArray | null {

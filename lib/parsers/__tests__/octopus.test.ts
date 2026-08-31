@@ -7,16 +7,44 @@ vi.mock("unpdf", () => ({
   extractText: vi.fn(),
 }));
 
-describe("parseOctopusBillText", () => {
-  it("parses a well-formed monthly bill summary", () => {
-    const text = [
-      "Bolletta luce",
-      "Periodo di fatturazione: dal 01/07/2026 al 31/07/2026",
-      "Consumo totale: 210,5 kWh",
-      "Totale da pagare: € 63,15",
-    ].join("\n");
+// Modeled on the text extracted from a real Octopus Energy Italia "Bolletta
+// luce" PDF (labels and layout as they appear on the bill; amounts changed,
+// personal/contract identifiers omitted).
+const REAL_BILL_EXCERPT = [
+  "La tua bolletta di Luglio 2026",
+  "Questo mese dovrai pagare",
+  "193,56€",
+  "Entro il 07/09/2026",
+  "DATA FATTURA: 18/08/2026",
+  "METODO PAGAMENTO: Addebito diretto SDD",
+  "PERIODO DI RIFERIMENTO: dal 01/07/2026 al 31/07/2026",
+  "SITUAZIONE PAGAMENTI: In data 18/08/2026 i pagamenti risultano regolari.",
+  "CONSUMO FATTURATO: 719 kWh",
+  "Consumo annuo",
+  "01/11/2025 - 31/07/2026",
+  "4979 kWh/anno",
+  "Scontrino dell'energia",
+  "Quota per consumi",
+  "719 kWh x 0,09 €/kWh 62,09 €",
+  "Quota fissa",
+  "1 mese x 9,92 €/mese 9,92 €",
+  "di cui spesa per la rete e gli oneri generali di sistema 1,92 €/mese 1,92 €",
+  "Quota potenza",
+  "4,5 kW x 1,98 €/kW 8,89 €",
+  "TOTALE BOLLETTA 193,56 €",
+  "TOTALE DA PAGARE 193,56 €",
+  "Credito rimanente 0,00 €",
+  "QUOTA FISSA (comp. commercializzazione): 8,00 €",
+  "Trasporto quota fissa 1 1,920000 €/mese 1,92 €",
+].join("\n");
 
-    const { rows, errors } = parseOctopusBillText(text, "user-1", "tariff-1");
+describe("parseOctopusBillText", () => {
+  it("parses the real Octopus bill layout", () => {
+    const { rows, errors } = parseOctopusBillText(
+      REAL_BILL_EXCERPT,
+      "user-1",
+      "tariff-1"
+    );
 
     expect(errors).toHaveLength(0);
     expect(rows).toHaveLength(1);
@@ -25,22 +53,15 @@ describe("parseOctopusBillText", () => {
       tariff_id: "tariff-1",
       billing_period_start: "2026-07-01",
       billing_period_end: "2026-07-31",
-      total_kwh: 210.5,
-      total_cost: 63.15,
+      total_kwh: 719,
+      total_cost: 193.56,
     });
   });
 
-  it("extracts an optional standing charge when present", () => {
-    const text = [
-      "Dal 01/07/2026 al 31/07/2026",
-      "Consumo totale: 210,5 kWh",
-      "Quota fissa: € 10,00",
-      "Totale da pagare: € 63,15",
-    ].join("\n");
+  it("picks the standing charge line total, not the per-unit price or unrelated quota fissa mentions", () => {
+    const { rows } = parseOctopusBillText(REAL_BILL_EXCERPT, "user-1", null);
 
-    const { rows } = parseOctopusBillText(text, "user-1", null);
-
-    expect(rows[0].standing_charge_total).toBe(10);
+    expect(rows[0].standing_charge_total).toBe(9.92);
   });
 
   it("reports an error when the expected fields are not found in the text", () => {
@@ -64,7 +85,7 @@ describe("parseOctopusBillPdf", () => {
   it("extracts text from the PDF bytes and delegates to parseOctopusBillText", async () => {
     vi.mocked(getDocumentProxy).mockResolvedValue({} as never);
     vi.mocked(extractText).mockResolvedValue({
-      text: "Dal 01/07/2026 al 31/07/2026 Consumo totale: 210,5 kWh Totale da pagare: € 63,15",
+      text: REAL_BILL_EXCERPT,
       totalPages: 1,
     } as never);
 
@@ -76,8 +97,8 @@ describe("parseOctopusBillPdf", () => {
 
     expect(errors).toHaveLength(0);
     expect(rows).toHaveLength(1);
-    expect(rows[0].total_kwh).toBe(210.5);
-    expect(rows[0].total_cost).toBe(63.15);
+    expect(rows[0].total_kwh).toBe(719);
+    expect(rows[0].total_cost).toBe(193.56);
   });
 
   it("reports an error when the PDF cannot be read", async () => {
