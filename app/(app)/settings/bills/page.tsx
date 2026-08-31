@@ -34,7 +34,7 @@ export default async function BillsSettingsPage() {
         <CardHeader>
           <CardTitle>Aggiungi bolletta manualmente</CardTitle>
           <CardDescription>
-            Usa questo form se la bolletta Octopus non è disponibile come CSV;
+            Usa questo form se la bolletta Octopus non è disponibile come PDF;
             in alternativa puoi caricarla nella sezione Import.
           </CardDescription>
         </CardHeader>

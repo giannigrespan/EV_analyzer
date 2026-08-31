@@ -34,6 +34,7 @@ function makeBill(overrides: Partial<ElectricityBill>): ElectricityBill {
     total_kwh: 200,
     total_cost: 60,
     standing_charge_total: null,
+    energy_commodity_cost: null,
     source_import_id: null,
     created_at: "2026-08-01T00:00:00Z",
     ...overrides,
@@ -107,6 +108,58 @@ describe("reconcileBills", () => {
 
     expect(reconciled.chargingCost).toBe(25);
     expect(reconciled.costDelta).toBe(60 - 25);
+  });
+
+  it("derives the real €/kWh from the bill's energy cost net of the standing charge", () => {
+    const bills = [
+      makeBill({ total_cost: 60, total_kwh: 200, standing_charge_total: 10 }),
+    ];
+
+    const [reconciled] = reconcileBills(bills, []);
+
+    // (60 - 10) / 200
+    expect(reconciled.billRatePerKwh).toBeCloseTo(0.25, 5);
+  });
+
+  it("falls back to the full bill total when there is no standing charge", () => {
+    const bills = [
+      makeBill({ total_cost: 60, total_kwh: 200, standing_charge_total: null }),
+    ];
+
+    const [reconciled] = reconcileBills(bills, []);
+
+    expect(reconciled.billRatePerKwh).toBeCloseTo(0.3, 5);
+  });
+
+  it("returns null billRatePerKwh when the bill has no kWh to divide by", () => {
+    const bills = [makeBill({ total_kwh: 0 })];
+
+    const [reconciled] = reconcileBills(bills, []);
+
+    expect(reconciled.billRatePerKwh).toBeNull();
+  });
+
+  it("derives evRatePerKwh from the Octopus Go energy commodity cost over kWh actually charged", () => {
+    const bills = [makeBill({ energy_commodity_cost: 78.75 })];
+    const sessions = [
+      makeSession({ started_at: "2026-07-10T01:00:00Z", energy_kwh: 300 }),
+    ];
+
+    const [reconciled] = reconcileBills(bills, sessions);
+
+    // 78.75 / 300
+    expect(reconciled.evRatePerKwh).toBeCloseTo(0.2625, 5);
+  });
+
+  it("returns null evRatePerKwh without an energy commodity cost or without any charging in the period", () => {
+    const billWithoutCost = [makeBill({ energy_commodity_cost: null })];
+    const sessions = [
+      makeSession({ started_at: "2026-07-10T01:00:00Z", energy_kwh: 300 }),
+    ];
+    expect(reconcileBills(billWithoutCost, sessions)[0].evRatePerKwh).toBeNull();
+
+    const billWithCost = [makeBill({ energy_commodity_cost: 78.75 })];
+    expect(reconcileBills(billWithCost, [])[0].evRatePerKwh).toBeNull();
   });
 });
 
