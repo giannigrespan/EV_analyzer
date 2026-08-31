@@ -87,7 +87,11 @@ export default async function TariffsSettingsPage() {
             Configura le fasce economica/standard della tua tariffa. Quando il
             prezzo cambia, aggiungi un nuovo periodo invece di modificare quello
             esistente: la cronologia serve per calcolare correttamente i costi
-            passati.
+            passati. Nota: Octopus Go Italia usa in realtà le fasce ARERA
+            F1/F2/F3 (con domenica e festivi sempre in F3); qui è
+            approssimata a due sole fasce (notte 23–7 economica, giorno 7–23
+            standard), quindi i costi calcolati in weekend/festivi possono
+            risultare leggermente più alti del reale.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
